@@ -5,6 +5,7 @@ __pycache__/
 
 data/*
 !data/.gitkeep
+!data/stress_test.template.jsonl
 outputs/*
 !outputs/.gitkeep
 reports/*
