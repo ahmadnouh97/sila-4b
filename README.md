@@ -26,6 +26,14 @@ Secondary metrics are tool-selection accuracy, argument exact match, argument fi
 
 Evaluation prompts, expected answers, tool schemas, paraphrases, and derived examples must never appear in training or tuning data. Dataset splits are fixed before training, checked for exact duplicates, and pinned to immutable revisions. Any contaminated example invalidates the affected comparison.
 
+## External benchmark adapters
+
+`sila.benchmarks.load_arabfuncbench(examples_path, tools_path, revision=...)` reads the two local JSON exports from [ArabFuncBench](https://huggingface.co/datasets/lsadouk1111/ArabFuncBench). The dataset is gated and licensed **CC BY 4.0**. It remains evaluation-only; do not put any of its prompts, tools, labels, or derivatives into training. The upstream [evaluation notebooks](https://github.com/lsadouk/ArabFuncBench) define tool selection accuracy, fuzzy argument extraction F1, and language compliance. Our existing exact-match scorer is a separate metric and must not be reported as the upstream benchmark score.
+
+`sila.benchmarks.load_bfcl(data_dir, revision=..., limit=500)` reads local BFCL V4 JSONL files and matching `possible_answer/` files from the [official Gorilla repository](https://github.com/ShishirPatil/gorilla/tree/main/berkeley-function-call-leaderboard/bfcl_eval/data). BFCL data and code are **Apache 2.0**. The default fixed prefix is 400 `simple_python` cases followed by 100 `multiple` cases; both are single-turn, single-call English AST categories. The returned `BfclBatch` retains unmodified upstream prompts and ground truths by upstream ID. `EvaluationExample.expected_arguments` is one representative answer because the internal schema cannot express BFCL's alternative values and optional arguments. **Use BFCL's [official AST evaluator](https://github.com/ShishirPatil/gorilla/blob/main/berkeley-function-call-leaderboard/bfcl_eval/eval_checker/ast_eval/ast_checker.py) with those original records and saved raw model outputs for BFCL accuracy**, not `sila.evaluation.score_examples`. The adapter changes BFCL's top-level parameter type spelling from `dict` to JSON Schema `object` only in `ToolDefinition`; its preserved prompt is unchanged.
+
+Both loaders require an explicit immutable upstream revision and only read local files. Pin and obtain the data outside the unit tests. Unsupported BFCL categories: parallel calls, irrelevance/relevance, Java/JavaScript, multi-turn, web search, memory, format sensitivity, and other executable or agentic categories. The full BFCL package currently pins NumPy 1.26.4, which does not support this project's Python 3.14 environment; run its official evaluator in a separate supported environment rather than copying its scoring logic here.
+
 ## Initial success criteria
 
 The treatment must satisfy all three conditions:
