@@ -37,3 +37,17 @@ Pull requests should explain the change and its experimental impact, link any is
 ## Reproducibility & Data Safety
 
 Pin model and dataset revisions, preserve raw responses before parsing, and keep training data disjoint from evaluation prompts, schemas, and derived examples. Never commit credentials or private datasets; pass secrets through environment variables.
+
+## SILA-4B Experiment Decisions and Gates
+
+- The selected base is `Qwen/Qwen3-4B-Instruct-2507` at revision `cdbee75f17c01a7cc42f958dc650907174af0554`. Use bitsandbytes 4-bit quantization with QLoRA, in a local Jupyter notebook. Verify the local GPU/runtime fit before a full training run; the recorded laptop GPU has 8 GB VRAM.
+- The intended comparison remains frozen Qwen vs. its Arabic-only synthetic-data adapter, with `inception42/jais-13b-chat` as the previously agreed comparator on ArabFuncBench. Retain the README-required 100-case Arabic set and fixed 500-case BFCL V4 subset unless the owner changes scope.
+- The owner says the current 100-case Arabic evaluation set has been reviewed by them. Its local rows may still carry draft statuses; before freezing or evaluating, record that review, set the final statuses, run `uv run python -m sila.validate_stress_set data/stress_test.jsonl --final`, and record the frozen hash. Do not edit the reviewed content without owner-provided corrections.
+- Generator v1.7 and the live `data/training.manifest.json` plus `reports/training_corpus_review.md` are authoritative for current training artifacts. Older hashes in `reports/phase1.md` are stale. Keep all generated data and reports ignored and out of commits.
+- Before any training run, obtain immutable local ArabFuncBench exports and BFCL V4 prompt/`possible_answer` files, record their revisions, and complete the leakage audit against the current train/validation corpus and frozen Arabic set. Keep benchmark data evaluation-only. Use BFCL's official AST evaluator for its score.
+- JAIS is gated and requires an approved immutable revision plus review of its license and custom code before download or execution. Preserve raw model outputs and metadata; never execute generated tool calls.
+- The project environment previously could not launch its Python 3.14 interpreter and had no ML training stack. Once implementation is authorized, establish and verify a compatible local Jupyter kernel; do not assume the current project environment is ready for model work.
+
+## Implementation Authorization
+
+Do not begin implementation, install the training stack, download models or benchmark data, or run training until the owner explicitly says **“start implementation.”** Repository review and this documentation update do not authorize those actions.
