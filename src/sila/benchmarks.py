@@ -30,6 +30,14 @@ def load_arabfuncbench(
         definitions = json.load(file)
     with examples_path.open(encoding="utf-8") as file:
         rows = json.load(file)
+    if isinstance(definitions, dict):
+        if any(not isinstance(group, list) for group in definitions.values()):
+            raise ValueError("ArabFuncBench tool groups must be lists")
+        definitions = [tool for group in definitions.values() for tool in group]
+    if not isinstance(definitions, list) or any(
+        not isinstance(tool, dict) for tool in definitions
+    ):
+        raise ValueError("ArabFuncBench tools must be a list or grouped object")
     tools = {item["name"]: ToolDefinition(**item) for item in definitions}
     if len(tools) != len(definitions):
         raise ValueError("duplicate ArabFuncBench tool name")
