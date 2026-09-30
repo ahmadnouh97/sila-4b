@@ -157,3 +157,54 @@ def test_duplicate_json_keys_do_not_silently_overwrite() -> None:
     )
     assert report.counts["parse_success"] == 0
     assert report.examples[0].result.parse_error == "duplicate JSON key: city"
+
+
+def test_qwen_native_response_contract() -> None:
+    wrapped = f"<tool_call>\n{call({'city': 'عمان'})}\n</tool_call>"
+    cases = [
+        ({"city": "عمان"}, wrapped, True, True),
+        ({"city": "عمان"}, "سأبحث الآن.\n" + wrapped, True, True),
+        (None, "ما المدينة التي تقصدها؟", True, False),
+        (None, "null", True, True),
+        ({"city": "عمان"}, "ما المدينة التي تقصدها؟", False, False),
+        (None, wrapped, False, True),
+        (None, "", False, False),
+        (None, "<tool_call>{broken}</tool_call>", False, False),
+        (None, "<tool_call>" + call({}), False, False),
+        (None, "</tool_call>", False, False),
+        (None, "</tool_call><tool_call>{}", False, False),
+        (None, "<tool_call>null</tool_call>", False, False),
+        (None, "<tool_call>[]</tool_call>", False, False),
+        (None, "<tool_call>{}</tool_call>", False, False),
+        (None, '<tool_call type="function">{}</tool_call>', False, False),
+        ({"city": "عمان"}, wrapped + wrapped, False, False),
+        (None, '{"name":"weather",', False, False),
+        (None, '"hello"', False, False),
+        (None, "```json\n{}\n```", False, False),
+        (
+            None,
+            '<tool_call>{"name":"weather","arguments":{},"arguments":{}}</tool_call>',
+            False,
+            False,
+        ),
+    ]
+    for args, text, exact, structured in cases:
+        raw = prediction("one", text)
+        item = score_examples(
+            [example("one", args)], [raw], output_format="qwen"
+        ).examples[0]
+        assert item.result.exact_match is exact, text
+        assert item.valid_structured_output is structured, text
+        assert item.result.raw_prediction == raw
+        if text == "ما المدينة التي تقصدها؟":
+            assert not item.parse_success
+            assert item.result.parse_error is None
+        if not exact and not structured and args is None:
+            assert item.result.parse_error
+
+    with pytest.raises(ValueError, match="output_format"):
+        score_examples([], [], output_format="unknown")
+    strict = score_examples(
+        [example("one", None)], [prediction("one", "ما المدينة التي تقصدها؟")]
+    ).examples[0]
+    assert not strict.result.exact_match

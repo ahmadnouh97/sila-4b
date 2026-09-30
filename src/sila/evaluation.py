@@ -1,4 +1,4 @@
-"""Deterministic scoring for JSON tool calls and JSON ``null`` refusals.
+"""Deterministic scoring for JSON and native Qwen tool-call responses.
 
 Tool and argument rates use positive examples; negative rates use negative
 examples. Argument key metrics compare top-level keys on positive examples.
@@ -31,6 +31,37 @@ def _no_duplicates(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
 
 def _reject_constant(value: str) -> None:
     raise ValueError(f"invalid JSON constant: {value}")
+
+
+def _response_value(text: str, output_format: str) -> tuple[JsonValue, bool]:
+    """Parse a response, allowing Qwen call blocks or plain no-call text."""
+    text = text.strip()
+    wrapped = False
+    if output_format == "qwen" and ("<tool_call" in text or "</tool_call" in text):
+        if (
+            text.count("<tool_call") != 1
+            or text.count("</tool_call") != 1
+            or "<tool_call>" not in text
+            or "</tool_call>" not in text
+        ):
+            raise ValueError("expected one complete Qwen tool-call block")
+        before, _, rest = text.partition("<tool_call>")
+        text, _, after = rest.partition("</tool_call>")
+        if "</tool_call" in before or "<tool_call" in after:
+            raise ValueError("invalid Qwen tool-call marker order")
+        wrapped = True
+    try:
+        value = json.loads(
+            text, object_pairs_hook=_no_duplicates, parse_constant=_reject_constant
+        )
+    except json.JSONDecodeError:
+        if output_format == "qwen" and not wrapped and text and text[0] not in '{["`<':
+            # ponytail: plain prose means no call; reply quality needs manual review.
+            return None, False
+        raise
+    if wrapped and not isinstance(value, dict):
+        raise ValueError("Qwen tool-call block must contain a call object")
+    return value, True
 
 
 def _equal(left: JsonValue, right: JsonValue) -> bool:
@@ -68,14 +99,22 @@ class ScoreReport:
 
 
 def score_examples(
-    examples: Sequence[EvaluationExample], predictions: Sequence[RawPrediction]
+    examples: Sequence[EvaluationExample],
+    predictions: Sequence[RawPrediction],
+    *,
+    output_format: str = "json",
 ) -> ScoreReport:
     """Score one raw prediction per example without executing generated calls.
 
     ``name`` and ``arguments`` are the only call fields. JSON ``null`` is the
-    refusal. Syntactically valid JSON with another shape counts as parsed but
-    invalid; it never becomes a refusal.
+    refusal. ``output_format='qwen'`` also accepts one native ``<tool_call>``
+    block or non-empty plain prose as a no-call decision. Plain prose does not
+    count as parsed JSON or valid structured output; its helpfulness is not
+    scored. Malformed or multiple call blocks are invalid, never refusals.
+    Select the same format for base and adapter, independently of gold labels.
     """
+    if output_format not in {"json", "qwen"}:
+        raise ValueError("output_format must be 'json' or 'qwen'")
     expected_by_id = {example.id: example for example in examples}
     predicted_by_id = {prediction.example_id: prediction for prediction in predictions}
     if len(expected_by_id) != len(examples) or len(predicted_by_id) != len(predictions):
@@ -91,12 +130,7 @@ def score_examples(
         valid = False
         parse_error = None
         try:
-            value = json.loads(
-                raw.generated_text,
-                object_pairs_hook=_no_duplicates,
-                parse_constant=_reject_constant,
-            )
-            parse_success = True
+            value, parse_success = _response_value(raw.generated_text, output_format)
             if value is None:
                 valid = True
             elif (
@@ -151,7 +185,7 @@ def score_examples(
             ScoredExample(
                 result=result,
                 parse_success=parse_success,
-                valid_structured_output=valid,
+                valid_structured_output=valid and parse_success,
                 should_call_correct=should_call_correct,
                 argument_key_tp=len(actual_keys & expected_keys),
                 argument_key_fp=len(actual_keys - expected_keys)
