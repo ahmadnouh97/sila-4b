@@ -57,6 +57,17 @@ def test_arabfuncbench_local_fixture(tmp_path):
     with pytest.raises(ValueError):
         load_arabfuncbench(rows, tools, revision="")
 
+    original_rows = json.loads(rows.read_text(encoding="utf-8"))
+    original_rows.append({**original_rows[1], "utterance": "أهلا"})
+    write_json(rows, original_rows)
+    repeated = load_arabfuncbench(rows, tools, revision="abc123")
+    assert [item.id for item in repeated] == [
+        "arab-1",
+        "arab-2::row-1",
+        "arab-2::row-2",
+    ]
+    assert [item.user_utterance for item in repeated] == ["ما الطقس؟", "مرحبا", "أهلا"]
+
 
 def test_bfcl_local_fixture_preserves_official_answers(tmp_path):
     answer_dir = tmp_path / "possible_answer"

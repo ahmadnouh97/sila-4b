@@ -7,6 +7,7 @@ for BFCL accuracy. These adapters never execute benchmark code or tool calls.
 """
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,14 +42,20 @@ def load_arabfuncbench(
     tools = {item["name"]: ToolDefinition(**item) for item in definitions}
     if len(tools) != len(definitions):
         raise ValueError("duplicate ArabFuncBench tool name")
+    id_counts = Counter(row["id"] for row in rows)
     result = []
-    for row in rows:
+    for index, row in enumerate(rows):
         negative = row["is_negative"]
         if not isinstance(negative, bool):
             raise ValueError(f"invalid is_negative for {row['id']}")
         result.append(
             EvaluationExample(
-                id=row["id"],
+                # Upstream repeats ten IDs; preserve every row without editing data.
+                id=(
+                    row["id"]
+                    if id_counts[row["id"]] == 1
+                    else f"{row['id']}::row-{index}"
+                ),
                 source=f"lsadouk1111/ArabFuncBench@{revision}",
                 language="ar",
                 dialect="msa",
@@ -61,6 +68,8 @@ def load_arabfuncbench(
                 tags=("evaluation-only",),
             )
         )
+    if len({example.id for example in result}) != len(result):
+        raise ValueError("ArabFuncBench internal row IDs collide")
     return tuple(result)
 
 
