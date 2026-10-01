@@ -71,9 +71,7 @@ def _target_set(rows: list[dict]) -> set[tuple[str, str]]:
     }
 
 
-def _matches_bfcl_target(
-    tool_name: str, arguments: dict, answer: dict
-) -> bool:
+def _matches_bfcl_target(tool_name: str, arguments: dict, answer: dict) -> bool:
     calls = answer["ground_truth"]
     if len(calls) != 1 or tool_name not in calls[0]:
         return False
@@ -108,7 +106,10 @@ def _audit_group(
         if _normalize_prompt(prompt) in train_prompt_normalized:
             normalized_prompts.append(row["id"])
         if bfcl_answers is None:
-            target = (row.get("expected_tool_name"), _canonical(row.get("expected_arguments")))
+            target = (
+                row.get("expected_tool_name"),
+                _canonical(row.get("expected_arguments")),
+            )
             if target in train_targets:
                 target_overlaps.append(row["id"])
         elif row.get("expected_tool_name"):
@@ -156,9 +157,7 @@ def run_audit() -> dict:
             revision=ARABFUNCBENCH_REVISION,
         )
     )
-    bfcl_batch = load_bfcl(
-        bfcl_root, revision=BFCL_REVISION, limit=500
-    )
+    bfcl_batch = load_bfcl(bfcl_root, revision=BFCL_REVISION, limit=500)
     bfcl_rows = list(bfcl_batch.examples)
     corpus_prompt_exact = {row["user_utterance"] for row in corpus_rows}
     corpus_prompt_normalized = {
@@ -214,7 +213,9 @@ def run_audit() -> dict:
         ),
     }
     report = {
-        "status": "passed" if all(group["passed"] for group in groups.values()) else "blocked",
+        "status": "passed"
+        if all(group["passed"] for group in groups.values())
+        else "blocked",
         "train_sha256": _sha256(train_path),
         "validation_sha256": _sha256(validation_path),
         "arabic_eval_sha256": _sha256(arabic_path),
@@ -231,11 +232,19 @@ def run_audit() -> dict:
         },
         "training_rows": {"train": len(train_rows), "validation": len(validation_rows)},
         "evaluation_groups": groups,
-        "method": "Exact prompts, NFKC/casefold/diacritic/punctuation-normalized prompts, tool names, full schemas, and expected calls; BFCL targets check every permitted value and optional argument.",
-        "limitations": "String and structure overlap checks do not rule out semantic similarity.",
+        "method": (
+            "Exact prompts, NFKC/casefold/diacritic/punctuation-normalized prompts, "
+            "tool names, full schemas, and expected calls; BFCL targets check "
+            "every permitted value and optional argument."
+        ),
+        "limitations": (
+            "String and structure overlap checks do not rule out semantic similarity."
+        ),
     }
     output = ROOT / "reports" / "leakage_audit.json"
-    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return report
 
 
