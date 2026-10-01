@@ -109,19 +109,25 @@ def comparison(
     }
 
 
-def load_inputs(root: Path, run_dir: Path) -> tuple[dict, dict, Any]:
+def load_inputs(
+    root: Path,
+    run_dir: Path,
+    *,
+    data_dir: Path | None = None,
+    audit_path: Path | None = None,
+) -> tuple[dict, dict, Any]:
     """Validate the unchanged reviewed set and all hashes from the training audit."""
     run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
-    audit = json.loads(
-        (root / "reports/leakage_audit.json").read_text(encoding="utf-8")
-    )
+    data_dir = data_dir or (root / run["training_manifest"]).parent
+    audit_path = audit_path or root / run["leakage_audit"]
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
     if (run["model_id"], run["model_revision"]) != (MODEL_ID, MODEL_REVISION):
         raise ValueError("training run does not use the experiment's pinned base")
     if audit["status"] != "passed":
         raise ValueError("leakage audit has not passed")
     for key, relative_path in (
-        ("train_sha256", "data/training.train.jsonl"),
-        ("validation_sha256", "data/training.validation.jsonl"),
+        ("train_sha256", data_dir / "training.train.jsonl"),
+        ("validation_sha256", data_dir / "training.validation.jsonl"),
         ("arabic_eval_sha256", "data/stress_test.jsonl"),
     ):
         if sha256(root / relative_path) != run[key] or run[key] != audit[key]:
@@ -217,7 +223,11 @@ def generate_predictions(
     import torch
 
     predictions = list(existing)
-    context = model.disable_adapter() if variant == "base" else nullcontext()
+    context = (
+        model.disable_adapter()
+        if variant == "base" and hasattr(model, "disable_adapter")
+        else nullcontext()
+    )
     with context, torch.inference_mode(), path.open("a", encoding="utf-8") as file:
         for index, example in enumerate(examples[len(existing) :], len(existing) + 1):
             prompt = render_prompt(tokenizer, example)
@@ -377,6 +387,9 @@ def main() -> None:
         "--limit", type=int, help="smoke test only; cannot produce a final verdict"
     )
     parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--audit-path", type=Path)
+    parser.add_argument("--adapter-dir", type=Path, help="saved checkpoint to evaluate")
     parser.add_argument(
         "--prepare-metrics",
         action="store_true",
@@ -396,7 +409,12 @@ def main() -> None:
         return
     if args.max_new_tokens < 1 or (args.limit is not None and args.limit < 1):
         parser.error("token and example limits must be positive")
-    run, all_suites, bfcl = load_inputs(root, args.run_dir)
+    run, all_suites, bfcl = load_inputs(
+        root,
+        args.run_dir,
+        data_dir=args.data_dir,
+        audit_path=args.audit_path,
+    )
     suites = {
         name: examples[: args.limit] if args.limit else examples
         for name, examples in all_suites.items()
@@ -405,7 +423,7 @@ def main() -> None:
     if any(name != "arabic" for name in suites):
         for name in SOURCES:
             verified_source(vendor, name)
-    adapter = args.run_dir / "adapter"
+    adapter = args.adapter_dir or args.run_dir / "adapter"
     generation = {
         "do_sample": False,
         "num_beams": 1,
@@ -431,7 +449,7 @@ def main() -> None:
             key: run[key]
             for key in ("train_sha256", "validation_sha256", "arabic_eval_sha256")
         },
-        "audit_sha256": sha256(root / "reports/leakage_audit.json"),
+        "audit_sha256": sha256(args.audit_path or root / run["leakage_audit"]),
         "metric_sources": {name: expected for name, (_, expected) in SOURCES.items()},
         "software": {
             name: version(name)

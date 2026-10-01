@@ -15,7 +15,7 @@ Read `README.md` for the experiment design, success criteria, current status, an
 - Evaluation data is evaluation-only. The 100 Arabic cases were reviewed by the owner; do not change their prompts, schemas, labels, or dates without owner corrections. The current leakage audit passed its exact/normalized checks; it does not detect all semantic similarity.
 - Preserve raw model responses. Never execute generated tool calls. Use BFCL's official AST evaluator for BFCL scores.
 - Training and paired evaluation are complete. The saved adapter failed the preset criteria; README.md records the aggregate results and limitations. Preserve the local artifacts. Do not launch training unless explicitly asked.
-- JAIS remains gated. Do not download or use it until its immutable revision, license, and custom code are reviewed and approved.
+- Follow-up experiments remain Qwen-only. Use the readiness checklist in `TODO.md` before a newly authorized training run.
 
 ## Development
 

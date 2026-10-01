@@ -23,9 +23,39 @@ uv run python -m sila.validate_stress_set data/stress_test.jsonl --final
 uv run python -m sila.audit_leakage
 ```
 
-For an explicitly requested new training run, open the notebook with the `Python (sila-4b .venv)` kernel and run its cells from top to bottom. It reports the expected step count and live training progress. The full run takes hours on the local 8 GB RTX 4060. Preserve the completed experiment before writing another run to the same output directory. Do not rerun the corpus generator unless you intend to replace the current generated data.
+The notebook is now configured for the prepared v1.8 follow-up, documented below. Keep `TRAINING_AUTHORIZED = False` until the owner explicitly requests training. Use `Python (sila-4b .venv)` and a new empty `OUTPUT_DIR`; occupied directories are rejected. Do not rerun the original corpus generator in an existing checkout.
 
-The starting QLoRA configuration uses LoRA rank 16/alpha 32/dropout 0.05, an effective batch of 16, and three epochs (990 optimizer steps). The peak learning rate is `1e-4`, with 3% warmup (30 steps) followed by linear decay. Seed 42 is applied before adapter initialization; the lowest validation-loss checkpoint is selected. These settings have not been tuned or shown to meet the experiment's success criteria.
+The completed v1.7 run used rank 16/alpha 32/dropout 0.05, effective batch 16, three epochs (990 updates), peak learning rate `1e-4`, 3% warmup, linear decay, and seed 42. Its lowest-loss epoch-one checkpoint failed the task criteria. These are historical settings, not the current notebook defaults.
+
+### Prepared follow-up (training remains off)
+
+Local reviewed inputs are under `data/followup-v1.8-dev2/`, with separate review/leakage/tokenizer records under `reports/followup-v1.8-dev2/`. They contain 9,060 Arabic training rows, 2,328 diagnostic validation rows, and 276 first-party development cases (138 per language). The corpus reuses original v1.7 rows in memory and adds enums, digit/date/percentage/currency normalization, missing inputs, quoted instructions, unavailable services, and unsupported enums. No-call training coverage rises from 9.09% to 29.14%. Review is AI/template review, not native certification; development contrast pairs are correlated and do not establish broad generalization.
+
+The frozen development base has 57/66 Arabic calls, 62/66 English calls, and 54/72 no-call decisions in each language. Under the unchanged development rule, an eligible checkpoint needs at least 60/66 Arabic calls, 62/66 English calls, and 54/72 Arabic no-call decisions. These first-party scores are not BFCL scores.
+
+The notebook has explicit data/development/audit/baseline/output paths. It checks pinned inputs and the frozen base development score before training. The trial is `5e-5`, 330 updates, saved checkpoints at 110/220/330, and the same LoRA configuration. Rendered examples exceed the old 512-token limit, so maximum length is 768 and device batch is 2 with accumulation 8 (effective 16). Training VRAM and performance remain unmeasured. Loss is diagnostic; the final saved adapter is not automatically selected.
+
+Creation commands for new output directories (reuse the reviewed inputs already present here):
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:PYTHONIOENCODING = "utf-8"
+uv run python -m sila.followup_data --output-dir data/followup-v1.8-new-draft
+# Generated drafts require recorded AI review before the next commands.
+uv run python -m sila.audit_leakage --data-dir data/followup-v1.8-dev2 --development data/followup-v1.8-dev2/development.jsonl --output reports/followup-v1.8-dev2/leakage_audit.json
+uv run python -m sila.development --data data/followup-v1.8-dev2/development.jsonl --output-dir outputs/development-v1.8/base-dev2
+```
+
+Reuse the existing reviewed files here; these commands document creation, not permission to replace them. The generator creates the initial 252-case draft; the prepared development revision appends 24 independently reviewed bilingual challenge calls after the initial Arabic call baseline reached 54/54. Both the initial set/baseline and the fixed-size appendix are preserved. Baseline scoring is resumable and preserves raw text. After a separately authorized training run, shut down the training kernel and score each saved checkpoint:
+
+```powershell
+foreach ($step in @(110, 220, 330)) {
+    uv run python -m sila.development --data data/followup-v1.8-dev2/development.jsonl --adapter "outputs/qwen3-4b-arabic-qlora-v1.8/checkpoint-$step" --output-dir "outputs/development-v1.8/checkpoint-$step"
+}
+uv run python -m sila.development --data data/followup-v1.8-dev2/development.jsonl --output-dir outputs/development-v1.8/base-dev2 --select outputs/development-v1.8/checkpoint-110 outputs/development-v1.8/checkpoint-220 outputs/development-v1.8/checkpoint-330
+```
+
+`base-dev2/selection.json` is null if no checkpoint clears Arabic improvement and zero English/no-call regression. Otherwise it records the selected adapter path and weight/config hashes. Freeze that adapter, then run `sila.evaluate_models --run-dir outputs/qwen3-4b-arabic-qlora-v1.8 --adapter-dir <selected checkpoint> --output-dir <new final results directory>`. The runner derives corpus/audit paths from the training record, with explicit `--data-dir` and `--audit-path` overrides available. Use official BFCL AST for the final BFCL score; development exact-call scoring is a separate first-party diagnostic.
 
 Development checks:
 
@@ -61,7 +91,6 @@ Metric sources are downloaded separately into `outputs/evaluation/vendor/` and c
 - ArabFuncBench: revision `c11e4e5ede503892b85633c40c16720c75310e48`; licensed CC BY 4.0. Keep it evaluation-only and use the [upstream metrics](https://github.com/lsadouk/ArabFuncBench) for its benchmark scores.
 - BFCL V4: Gorilla revision `9d8416a96d1d69975493f1b6d60ff07d12a1726a`; Apache 2.0. Only the fixed subset described above is in scope.
 - Training corpus: first-party generator v1.7. Its manifest pins the local data hashes and split details.
-- JAIS (`inception42/jais-13b-chat`) is a planned comparator. Its immutable revision, license, and custom code still need review before download or use.
 
 Local datasets, model outputs, and reports are ignored by Git. Preserve raw model responses for scoring, and never execute generated tool calls.
 

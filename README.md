@@ -6,6 +6,8 @@ An Arabic tool-calling experiment with Qwen3-4B, QLoRA, and paired evaluation on
 
 [Reproduction guide](docs/reproduction.md)
 
+New to the code? Read the [plain-language code guide](docs/code-guide.md) for the file map, main functions, and a worked scoring example.
+
 ## Question and approach
 
 Can Arabic-only fine-tuning improve tool calling while preserving English tool-calling performance?
@@ -49,6 +51,8 @@ The adapter should not replace the base for the measured tasks. Lower training l
 
 The synthetic corpus covers only eight tool schemas with string/integer fields, without enums or date formats. That is a plausible coverage gap to investigate, not a proven cause of the regressions. Any follow-up should first review data quality and test normalization and grounded no-call decisions on separate development examples. More training alone has no demonstrated benefit here.
 
+The [next-experiment checklist](TODO.md) now has a separate v1.8 corpus (9,060 training / 2,328 validation rows), 276 independent development cases, and checkpoint scoring with English/no-call preservation gates. Structural/leakage checks and independent AI review pass; this is not native-speaker certification. The frozen development base scores 57/66 Arabic calls, 62/66 English calls, and 54/72 Arabic no-call decisions. An initial call ceiling prompted one fixed reviewed challenge appendix; both versions are preserved. The notebook is prepared for a bounded Qwen-only follow-up with training disabled; another run cannot guarantee an improvement.
+
 The Arabic set is small, with ten cases per category; synthetic training text has not had linguistic review. The leakage audit cannot exclude semantic similarity, BFCL covers a fixed subset rather than general English ability, and no-call scoring measures a decision rather than reply quality or safety. This is one completed experiment, not evidence that QLoRA generally harms Arabic performance.
 
 ## Review the code without a GPU
@@ -68,8 +72,9 @@ The tests and illustrative template require no GPU, model download, or private e
 
 | Entry point | Purpose |
 | --- | --- |
-| [Training notebook](notebooks/train_qwen_qlora.ipynb) | Hash/review gates, NF4 loading, QLoRA, checkpoint selection, adapter and run-record export |
-| [Corpus generator](src/sila/generate_training_corpus.py) | Deterministic synthetic data, splits, and manifest; rerunning replaces files |
+| [Training notebook](notebooks/train_qwen_qlora.ipynb) | Follow-up review/hash gates, bounded NF4 QLoRA, checkpoints and run-record export; training requires authorization |
+| [Original corpus generator](src/sila/generate_training_corpus.py) / [follow-up data](src/sila/followup_data.py) | Deterministic v1.7 reproduction and separate v1.8 additions/development cases |
+| [Development scoring](src/sila/development.py) | Cached-base/checkpoint generation, exact-call scoring, and hash-verified candidate selection |
 | [Validation](src/sila/validate_stress_set.py) / [leakage audit](src/sila/audit_leakage.py) | Structural/review checks and exact/normalized overlap checks |
 | [Paired runner](src/sila/evaluate_models.py) | Raw-response persistence, compatible-prefix resume, inference, scoring, and acceptance verdict |
 | [Benchmark loaders](src/sila/benchmarks.py) / [upstream metrics](src/sila/benchmark_metrics.py) | Pinned benchmark inputs, duplicate-row handling, hash-verified metric code |
@@ -80,4 +85,4 @@ The tests and illustrative template require no GPU, model download, or private e
 
 This repository contains source, tests, the illustrative template, and aggregate findings. The reviewed evaluation set, benchmark exports, adapter, raw predictions, and full reports remain local and ignored by Git. A fresh clone can exercise the code but cannot independently reproduce the reported scores without those artifacts. Local records are `outputs/qwen3-4b-arabic-qlora/run.json`, `outputs/evaluation/results/summary.json`, and `reports/evaluation_review.md`.
 
-Existing checkouts must preserve the authoritative training manifest and reviewed evaluation data. Training is manual and must not be launched without an explicit owner request. The JAIS comparator remains gated pending revision, license, and custom-code review. Model and benchmark sources, revisions, attribution, and setup details are in the [reproduction guide](docs/reproduction.md).
+Existing checkouts must preserve the authoritative training manifest and reviewed evaluation data. Training is manual and must not be launched without an explicit owner request. Model and benchmark sources, revisions, attribution, and setup details are in the [reproduction guide](docs/reproduction.md).

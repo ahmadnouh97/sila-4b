@@ -1,5 +1,6 @@
 """Audit local evaluation prompts, tools, schemas, and targets against training data."""
 
+import argparse
 import hashlib
 import json
 import unicodedata
@@ -140,9 +141,17 @@ def _audit_group(
     }
 
 
-def run_audit() -> dict:
-    train_path = ROOT / "data" / "training.train.jsonl"
-    validation_path = ROOT / "data" / "training.validation.jsonl"
+def run_audit(
+    *,
+    data_dir: Path | None = None,
+    output: Path | None = None,
+    development_path: Path | None = None,
+) -> dict:
+    data_dir = data_dir or ROOT / "data"
+    if data_dir.resolve() != (ROOT / "data").resolve() and output is None:
+        raise ValueError("new corpus requires a separate audit output path")
+    train_path = data_dir / "training.train.jsonl"
+    validation_path = data_dir / "training.validation.jsonl"
     arabic_path = ROOT / "data" / "stress_test.jsonl"
     arabfunc_root = ROOT / "data" / "ArabFuncBench"
     bfcl_root = ROOT / "data" / "benchmarks" / "bfcl_v4"
@@ -212,12 +221,32 @@ def run_audit() -> dict:
             bfcl_batch.ground_truth,
         ),
     }
+    if development_path is not None:
+        groups["development"] = _audit_group(
+            "development",
+            _jsonl(development_path),
+            corpus_rows,
+            corpus_prompt_exact,
+            corpus_prompt_normalized,
+            corpus_tool_names,
+            corpus_schemas,
+            corpus_properties,
+            corpus_targets,
+        )
+    split_overlap = sorted(
+        {_normalize_prompt(r["user_utterance"]) for r in train_rows}
+        & {_normalize_prompt(r["user_utterance"]) for r in validation_rows}
+    )
     report = {
         "status": "passed"
-        if all(group["passed"] for group in groups.values())
+        if all(group["passed"] for group in groups.values()) and not split_overlap
         else "blocked",
         "train_sha256": _sha256(train_path),
         "validation_sha256": _sha256(validation_path),
+        "development_sha256": _sha256(development_path)
+        if development_path is not None
+        else None,
+        "train_validation_prompt_overlap": split_overlap,
         "arabic_eval_sha256": _sha256(arabic_path),
         "arabfuncbench_revision": ARABFUNCBENCH_REVISION,
         "arabfuncbench_metric_revision": "9d314f34b6cb54d2916e4e2b454b87911df3110e",
@@ -241,7 +270,10 @@ def run_audit() -> dict:
             "String and structure overlap checks do not rule out semantic similarity."
         ),
     }
-    output = ROOT / "reports" / "leakage_audit.json"
+    output = output or ROOT / "reports" / "leakage_audit.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists() and data_dir.resolve() != (ROOT / "data").resolve():
+        raise ValueError("new audit output already exists; preserve it")
     output.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -249,7 +281,16 @@ def run_audit() -> dict:
 
 
 def main() -> None:
-    report = run_audit()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--development", type=Path)
+    args = parser.parse_args()
+    report = run_audit(
+        data_dir=args.data_dir,
+        output=args.output,
+        development_path=args.development,
+    )
     print(f"Leakage audit {report['status']}: {report['evaluation_groups']}")
 
 
